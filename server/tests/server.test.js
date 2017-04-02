@@ -4,26 +4,14 @@ const {ObjectID} = require('mongodb');
 
 const {app} = require('./../server');
 const {Todo} = require('./../models/todo');
+const {User} = require('./../models/user');
+const {todos, populateTodos, users, populateUsers} = require('./seed/seed');
 
-const todos = [{
-  text: "First test todo",
-  _id: "58d316af3b28d2801f60a6ba"
-}, {
-  _id: new ObjectID(),
-  text: 'second test todo',
-  completed: true,
-  completedAt:333
-}]
+beforeEach(populateUsers);
+beforeEach(populateTodos);
 
-beforeEach(function (done) {
-  Todo.remove({}).then(() => {
-    return Todo.insertMany(todos);
-  })
-    .then(() => done());
-});
-
-describe('POST /todos', function () {
-  it('Should create a new todo', function (done) {
+describe('POST /todos', () => {
+  it('should create a new todo', (done) => {
     var text = 'Test todo text';
 
     request(app)
@@ -34,7 +22,7 @@ describe('POST /todos', function () {
         expect(res.body.text).toBe(text);
       })
       .end((err, res) => {
-        if(err) {
+        if (err) {
           return done(err);
         }
 
@@ -42,29 +30,30 @@ describe('POST /todos', function () {
           expect(todos.length).toBe(1);
           expect(todos[0].text).toBe(text);
           done();
-        }).catch(err => done(err));
+        }).catch((e) => done(e));
       });
   });
 
-  it('should not create todo with invalid body data', function (done) {
+  it('should not create todo with invalid body data', (done) => {
     request(app)
       .post('/todos')
       .send({})
       .expect(400)
       .end((err, res) => {
-        if(err) {
+        if (err) {
           return done(err);
         }
-        Todo.find().then(todos => {
-          expect(todos.length === 2);
+
+        Todo.find().then((todos) => {
+          expect(todos.length).toBe(2);
           done();
-        }).catch(err => done(err));
+        }).catch((e) => done(e));
       });
   });
 });
 
-describe('GET /todos', function () {
-  it('should get all todos', function (done) {
+describe('GET /todos', () => {
+  it('should get all todos', (done) => {
     request(app)
       .get('/todos')
       .expect(200)
@@ -75,42 +64,38 @@ describe('GET /todos', function () {
   });
 });
 
-
-describe('GET /todos/:id', function () {
-  it('should return an emty body and status 404 for an invalid id', function (done) {
+describe('GET /todos/:id', () => {
+  it('should return todo doc', (done) => {
     request(app)
-      .get('/todos/1g2g1h')
-      .expect(404)
+      .get(`/todos/${todos[0]._id.toHexString()}`)
+      .expect(200)
       .expect((res) => {
-        expect(res.body).toEqual({});
+        expect(res.body.todo.text).toBe(todos[0].text);
       })
       .end(done);
   });
 
-  it('should return a valid todo when id matches', function (done) {
+  it('should return 404 if todo not found', (done) => {
+    var hexId = new ObjectID().toHexString();
+
     request(app)
-    .get('/todos/58d316af3b28d2801f60a6ba')
-    .expect(200)
-    .expect((res) => {
-      expect(res.body.todo.text).toEqual("First test todo");
-    })
-    .end(done);
+      .get(`/todos/${hexId}`)
+      .expect(404)
+      .end(done);
   });
 
-  it('Should return 404 and empty body when todo not found', (done) => {
+  it('should return 404 for non-object ids', (done) => {
     request(app)
-    .get('/todos/48d316af3b28d2801f60a6ba')
-    .expect(404)
-    .expect((res) => {
-      expect(res.body).toEqual({});
-    })
-    .end(done);
+      .get('/todos/123abc')
+      .expect(404)
+      .end(done);
   });
 });
 
-describe('DELETE /todos/:id', function () {
-  it('should remove a tudo', function (done) {
+describe('DELETE /todos/:id', () => {
+  it('should remove a todo', (done) => {
     var hexId = todos[1]._id.toHexString();
+
     request(app)
       .delete(`/todos/${hexId}`)
       .expect(200)
@@ -118,56 +103,144 @@ describe('DELETE /todos/:id', function () {
         expect(res.body.todo._id).toBe(hexId);
       })
       .end((err, res) => {
-        if(err) {
+        if (err) {
           return done(err);
         }
-        Todo.findById(hexId)
-          .then((todo) => {
-            expect(todo).toNotExist();
-            done();
-          })
-          .catch(e => done(e));
-      })
+
+        Todo.findById(hexId).then((todo) => {
+          expect(todo).toNotExist();
+          done();
+        }).catch((e) => done(e));
+      });
   });
-  it('should return a 404 if todo not found', function (done) {
+
+  it('should return 404 if todo not found', (done) => {
     var hexId = new ObjectID().toHexString();
+
     request(app)
       .delete(`/todos/${hexId}`)
       .expect(404)
       .end(done);
-    });
-  it('should return 404 if object id is invalid', function (done) {
-    var hexId = "rrr444";
+  });
+
+  it('should return 404 if object id is invalid', (done) => {
     request(app)
-      .delete(`/todos/${hexId}`)
+      .delete('/todos/123abc')
       .expect(404)
       .end(done);
   });
 });
 
-describe('PATCH/todos/:id', function () {
-  it('should update the todo', function (done) {
-    var hexId = "58d316af3b28d2801f60a6ba";
-    request(app)
-      .patch(`/todos/${hexId}`)
-      .send({completed: true})
-      .expect(200)
-      .expect((res) => {
-        expect(res.body.todo.completed).toBe(true);
-        expect(res.body.todo.completedAt).toExist();
-      })
-      .end(done);
-  });
-  it('should clear completedAt when todo is not completed', function (done) {
-    var hexId = todos[1]._id.toHexString();
+describe('PATCH /todos/:id', () => {
+  it('should update the todo', (done) => {
+    var hexId = todos[0]._id.toHexString();
+    var text = 'This should be the new text';
 
     request(app)
       .patch(`/todos/${hexId}`)
-      .send({completed: false})
+      .send({
+        completed: true,
+        text
+      })
       .expect(200)
       .expect((res) => {
-        expect(res.body.todo.completedAt).toBe(null);
+        expect(res.body.todo.text).toBe(text);
+        expect(res.body.todo.completed).toBe(true);
+        expect(res.body.todo.completedAt).toBeA('number');
       })
       .end(done);
+  });
+
+  it('should clear completedAt when todo is not completed', (done) => {
+    var hexId = todos[1]._id.toHexString();
+    var text = 'This should be the new text!!';
+
+    request(app)
+      .patch(`/todos/${hexId}`)
+      .send({
+        completed: false,
+        text
+      })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.todo.text).toBe(text);
+        expect(res.body.todo.completed).toBe(false);
+        expect(res.body.todo.completedAt).toNotExist();
+      })
+      .end(done);
+  });
+});
+
+describe('GET /users/me', function () {
+  it('should return user if authenticated', function (done) {
+    request(app)
+      .get('/users/me')
+      .set('x-auth', users[0].tokens[0].token)
+      .expect(200)
+      .expect((res) => {
+        expect(res.body._id).toBe(users[0]._id.toHexString());
+        expect(res.body.email).toBe(users[0].email);
+      })
+      .end(done);
+  });
+
+  it('should return a 401 if not authenticated', function (done) {
+    request(app)
+      .get('/users/me')
+      .expect(401)
+      .expect((res) => {
+        expect(res.body).toEqual({});
+      })
+      .end(done);
+  });
+});
+
+describe('POST /users', function () {
+  it('should create a user', function (done) {
+    var email = 'example@example.com';
+    var password = '123mnb!';
+
+    request(app)
+      .post('/users')
+      .send({email, password})
+      .expect(200)
+      .expect((res) => {
+        expect(res.headers['x-auth']).toExist();
+        expect(res.body._id).toExist();
+        expect(res.body.email).toBe(email);
+      })
+      .end(err => {
+        if(err) {
+          return done(err);
+        }
+        User.findOne({email})
+          .then((user) => {
+            expect(user).toExist();
+            expect(user.password).toNotBe(password);
+            done();
+          });
+      });
+  });
+
+  it('should return validation errors if request invalid', function (done) {
+    var email = 'example';
+    var password = '123mnb!';
+
+    request(app)
+      .post('/users')
+      .send({email, password})
+      .expect(400)
+      .end(done);
+  });
+
+  it('should not create user if email in use', function (done) {
+    var email = 'test@example.com';
+    var password = '123mnb!';
+
+    request(app)
+    .post('/users')
+    .send({email, password})
+    .expect(400)
+    .end(done);
   });
 });
